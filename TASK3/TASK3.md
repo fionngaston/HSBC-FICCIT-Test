@@ -5,23 +5,23 @@ A kdb+ based solution for a new UI feature which provides charting of different 
 
 
 ## Architecture diagram
-<diagram>
+![Architecture Diagram](archDiagram.jpg)
 
 
 ## Data capture
-Keep the data capture design simple. Use a traditional date partitioned, sym-parted data. Store every tick on the database. Data will be persisted from an in-memory RDB to HDB at end of day. All historical data up to yesterday's end of day will be stored in the HDB.
+The data capture design has been kept simple, using traditional date partitioned, sym-parted data.  Every tick will be stored on the database. Data will be persisted from an in-memory RDB to HDB at end of day. All historical data up to yesterday's end of day will be stored in the HDB.
 
 
 ## Data query
 - The charting front end will pass in a symbol (the stock sym), a start and end timestamp and a granularity, i.e. how many price points to return to the chart. Assuming q-TCP requests to the back-end.
-- The gateway (GW) is a q process. This has an API function defined that can be called via TCP.
+- The gateway (GW) is a q process. This has API functions defined that can be called via TCP.
 - The RDB and HDBs are q processes. They have query API functions that can be called by the GW.
 
 ### Query logic
-- Database registration: The GW will have a list of all running databases. Each database will register with the GW upon startup by connecting to the GW and calling a register API. This will append that database's availability to an in-memory availability table containing handles to the database and list of time ranges available. The databases will re-call this registration API upon EOD writedown to refresh the time ranges available. The GW will remove a database from this availability table upon database disconnection in the `.z.pc` handle.
+- Database registration: The GW will have a list of all running databases. Each database will register with the GW upon startup by connecting to the GW and calling a register API. This will to an in-memory availability table containing handles to the database and list of time ranges available. The databases will re-call this registration API upon EOD writedown to refresh the time ranges available. The GW will remove a database from this availability table upon database disconnection in the `.z.pc` handle.
 - Database selection: The GW will process the `start` and `end` timestamps, use these to determine which database(s) to route the request to by looking up the availability table e.g. if the times requested are only for today, route the request to an RDB only. If there are multiple different databases that could fulfil the request, the database with the fewest number of outstanding requests will be selected (`first key asc count each .z.W`).
 - Request routing: Upon receiving a request from the charting client and determining the database to send the requests to, the GW will send async requests to the relevant databases.
-- Parallelisation: The API function called by the charting client will call `-30!(::)`, inducing a [deferred response](https://code.kx.com/q/kb/deferred-response/). This will cause the charting client to wait for the response like a normal synchronous call, but allow the GW to process other requests while the client waits.
+- The API function called by the charting client will call `-30!(::)`, inducing a [deferred response](https://code.kx.com/q/kb/deferred-response/). This will cause the charting client to wait for the response like a normal synchronous call, but allow the GW to process other requests while the client waits.
 - The GW will call a database API function to select the relevant data at the specified granularity. Example API for RDB:
    ```q
    q) getQuotes:{[symParam;start;end;granularity] select last price by sym:symParam, `timestamp$((end-start)%granularity) xbar time from quote where sym=symParam, time within (start;end)}
@@ -35,7 +35,7 @@ Keep the data capture design simple. Use a traditional date partitioned, sym-par
    eurusd 2024.04.27D14:45:28.800000000| 274.519
    ...
    ``` 
- This API will be called asynchronously by the GW. Upon completion of the request, the database will return the results to the same GW handle, calling a GW API to process the results. 
+   This API will be called asynchronously by the GW. Upon completion of the request, the database will return the results to the same GW handle, calling a GW API to process the results. 
 - Upon receipt of the responses from the databases, the GW will store the responses in-memory. When all expected responses have been returned for a client request, the GW will join the results together, and return the results to the charting client in a message of format `-30!(clientHandle;0b;data)`.
 
 
