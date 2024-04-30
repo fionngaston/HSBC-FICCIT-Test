@@ -5,7 +5,7 @@ A kdb+ based solution for a new UI feature which provides charting of different 
 
 
 ## Architecture diagram
-![Architecture Diagram](archDiagram.jpg)
+![Architecture Diagram](ArchDiagram.jpg)
 
 
 ## Data capture
